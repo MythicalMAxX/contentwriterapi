@@ -1,6 +1,8 @@
 [config]
 SCM_DO_BUILD_DURING_DEPLOYMENT=true
-PRE_BUILD_COMMAND=python -m pip install --upgrade pip && pip install --only-binary :all: pydantic-core==2.0.2 && pip install --no-deps pydantic==2.0.3
+PYTHON_ENABLE_VENV_CREATION=true
+WEBSITE_RUN_FROM_PACKAGE=0
 ENABLE_ORYX_BUILD=true
-POST_BUILD_COMMAND=echo "Build completed successfully!"
+CUSTOM_BUILD_COMMAND=pip install --upgrade pip && pip install --only-binary :all: pydantic-core==2.0.2 && pip install --no-deps pydantic==2.0.3
+SCM_COMMAND_IDLE_TIMEOUT=3600
 command=bash startup.sh 

@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Set the correct paths for Azure App Service
+export PYTHONPATH=/home/site/wwwroot
+export PATH="$PATH:/home/site/wwwroot/antenv/bin"
+
+# Activate the Python virtual environment if it exists
+if [ -d /home/site/wwwroot/antenv ]; then
+    source /home/site/wwwroot/antenv/bin/activate
+fi
+
 # Upgrade pip to latest version
 python -m pip install --upgrade pip
 
