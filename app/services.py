@@ -27,16 +27,31 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
 
 # Configure OpenAI client for OpenRouter with increased timeout
-client = openai.OpenAI(
-    base_url=OPENROUTER_API_URL,
-    api_key=OPENROUTER_API_KEY,
-    default_headers={
-        "HTTP-Referer": "https://contentwriterai.com",  # Replace with your actual domain
-    },
-    timeout=httpx.Timeout(
-        300.0, connect=60.0
-    ),  # 5 minutes total timeout, 60 seconds for connection
-)
+try:
+    client = openai.OpenAI(
+        base_url=OPENROUTER_API_URL,
+        api_key=OPENROUTER_API_KEY,
+        default_headers={
+            "HTTP-Referer": "https://contentwriterai.com",  # Replace with your actual domain
+        },
+        timeout=httpx.Timeout(
+            300.0, connect=60.0
+        ),  # 5 minutes total timeout, 60 seconds for connection
+    )
+except TypeError as e:
+    # If there's a TypeError about unexpected keyword arguments, it might be related to proxies
+    if "got an unexpected keyword argument 'proxies'" in str(e):
+        # Create client without httpx parameters
+        client = openai.OpenAI(
+            base_url=OPENROUTER_API_URL,
+            api_key=OPENROUTER_API_KEY,
+            default_headers={
+                "HTTP-Referer": "https://contentwriterai.com",
+            },
+        )
+    else:
+        # Re-raise if it's a different TypeError
+        raise
 
 
 class OpenRouterService:
