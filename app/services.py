@@ -28,29 +28,32 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
 
 # Configure OpenAI client for OpenRouter with increased timeout
 try:
+    # Create a custom httpx client without proxies
+    http_client = httpx.Client(
+        timeout=httpx.Timeout(300.0, connect=60.0),
+        proxies=None,  # Explicitly disable proxies
+    )
+
+    # Create OpenAI client with the custom httpx client
     client = openai.OpenAI(
         base_url=OPENROUTER_API_URL,
         api_key=OPENROUTER_API_KEY,
         default_headers={
-            "HTTP-Referer": "https://cwapi-dmgma3hjf3becxhf.canadacentral-01.azurewebsites.net/",  # Replace with your actual domain
+            "HTTP-Referer": "https://cwapi-dmgma3hjf3becxhf.canadacentral-01.azurewebsites.net/",
         },
-        timeout=httpx.Timeout(
-            300.0, connect=60.0
-        ),  # 5 minutes total timeout, 60 seconds for connection
+        http_client=http_client,
     )
-except TypeError as e:
-    # If there's a TypeError about unexpected keyword arguments, it might be related to proxies
-    if "got an unexpected keyword argument 'proxies'" in str(e):
-        # Create client without httpx parameters
+except Exception as e:
+    print(f"Error initializing OpenAI client with custom http_client: {str(e)}")
+    # Fallback to most basic client configuration
+    try:
         client = openai.OpenAI(
             base_url=OPENROUTER_API_URL,
             api_key=OPENROUTER_API_KEY,
-            default_headers={
-                "HTTP-Referer": "https://cwapi-dmgma3hjf3becxhf.canadacentral-01.azurewebsites.net/",
-            },
         )
-    else:
-        # Re-raise if it's a different TypeError
+        print("Successfully initialized fallback OpenAI client")
+    except Exception as e2:
+        print(f"All OpenAI client initialization attempts failed: {str(e2)}")
         raise
 
 
