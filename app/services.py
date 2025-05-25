@@ -32,7 +32,7 @@ try:
         base_url=OPENROUTER_API_URL,
         api_key=OPENROUTER_API_KEY,
         default_headers={
-            "HTTP-Referer": "https://contentwriterai.com",  # Replace with your actual domain
+            "HTTP-Referer": "https://cwapi-dmgma3hjf3becxhf.canadacentral-01.azurewebsites.net/",  # Replace with your actual domain
         },
         timeout=httpx.Timeout(
             300.0, connect=60.0
@@ -46,7 +46,7 @@ except TypeError as e:
             base_url=OPENROUTER_API_URL,
             api_key=OPENROUTER_API_KEY,
             default_headers={
-                "HTTP-Referer": "https://contentwriterai.com",
+                "HTTP-Referer": "https://cwapi-dmgma3hjf3becxhf.canadacentral-01.azurewebsites.net/",
             },
         )
     else:
