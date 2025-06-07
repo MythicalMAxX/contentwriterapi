@@ -89,3 +89,4 @@ nosetests.xml
 test_*.md
 test_*.json
 *.backup 
+.vercel

@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 import json
 from typing import Optional, List, Dict, Any
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import redis
 
 # Import models and services
 from .database import get_db, get_or_create_user, get_user_usage_stats
@@ -25,12 +29,46 @@ from .models import (
 )
 from .services import OpenRouterService, ArticleService, CostService
 
+# Load environment variables
+load_dotenv()
+
+# Rate limiting setup
+def get_redis_client():
+    """Get Redis client with fallback to in-memory if Redis is not available"""
+    try:
+        redis_client = redis.Redis(
+            host=os.getenv('REDIS_HOST', 'localhost'),
+            port=int(os.getenv('REDIS_PORT', 6379)),
+            password=os.getenv('REDIS_PASSWORD'),
+            decode_responses=True
+        )
+        # Test connection
+        redis_client.ping()
+        return redis_client
+    except:
+        # Fallback to in-memory storage for development
+        print("Warning: Redis not available, using in-memory rate limiting")
+        return None
+
+redis_client = get_redis_client()
+
+# Initialize rate limiter
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}" if redis_client else "memory://",
+    default_limits=["1000/hour", "100/minute"]
+)
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Content Writer AI API",
     description="API for generating and validating content using LLMs",
     version="1.0.0",
 )
+
+# Add rate limiting state and handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -157,13 +195,15 @@ async def startup_db_client():
 
 # API endpoints
 @app.get("/")
-async def root():
+@limiter.limit("10/minute")
+async def root(request: Request):
     """Root endpoint - API info"""
     return {"message": "Content Writer AI API"}
 
 
 @app.get("/models", response_class=MarkdownJSONResponse)
-async def get_models(db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def get_models(request: Request, db: Session = Depends(get_db)):
     """Get available models"""
     try:
         models = await OpenRouterService.get_models(db)
@@ -173,23 +213,24 @@ async def get_models(db: Session = Depends(get_db)):
 
 
 @app.post("/generate-article", response_class=MarkdownJSONResponse)
-async def generate_article(request: ArticleRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")  # More restrictive for expensive operations
+async def generate_article(request: Request, article_request: ArticleRequest, db: Session = Depends(get_db)):
     """Generate an article based on title, details, tone, and other parameters"""
     try:
         # Get or create user
         user = get_or_create_user(
-            db, user_id=str(request.user_id) if request.user_id else None
+            db, user_id=str(article_request.user_id) if article_request.user_id else None
         )
 
         # Generate article
         result = await ArticleService.generate_article(
-            title=request.title,
-            details=request.details,
-            tone=request.tone,
-            llm_model=request.id,
-            word_count=request.word_count,
-            promotion_content=request.promotion_content,
-            negative_content=request.negative_content,
+            title=article_request.title,
+            details=article_request.details,
+            tone=article_request.tone,
+            llm_model=article_request.id,
+            word_count=article_request.word_count,
+            promotion_content=article_request.promotion_content,
+            negative_content=article_request.negative_content,
             db=db,
             user_id=user.id,
         )
@@ -201,18 +242,19 @@ async def generate_article(request: ArticleRequest, db: Session = Depends(get_db
 
 
 @app.post("/validate-content", response_class=MarkdownJSONResponse)
-async def validate_content(request: ValidationRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")  # Moderate rate limit for validation
+async def validate_content(request: Request, validation_request: ValidationRequest, db: Session = Depends(get_db)):
     """Validate and improve article content based on evaluation metrics"""
     try:
         # Get or create user
         user = get_or_create_user(
-            db, user_id=str(request.user_id) if request.user_id else None
+            db, user_id=str(validation_request.user_id) if validation_request.user_id else None
         )
 
         result = await ArticleService.validate_content(
-            article_content=request.article_content,
-            evaluation_metrics=request.evaluation_metrics,
-            llm_model=request.id,
+            article_content=validation_request.article_content,
+            evaluation_metrics=validation_request.evaluation_metrics,
+            llm_model=validation_request.id,
             db=db,
             user_id=user.id,
         )
@@ -235,18 +277,19 @@ async def validate_content(request: ValidationRequest, db: Session = Depends(get
 
 
 @app.post("/calculate-cost", response_class=MarkdownJSONResponse)
-async def calculate_cost(request: ModelCostRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def calculate_cost(request: Request, cost_request: ModelCostRequest, db: Session = Depends(get_db)):
     """Calculate the cost of using a model based on token usage"""
     try:
         # Get or create user
         user = get_or_create_user(
-            db, user_id=str(request.user_id) if request.user_id else None
+            db, user_id=str(cost_request.user_id) if cost_request.user_id else None
         )
 
         result = await CostService.calculate_cost(
-            model_id=request.id,
-            input_tokens=request.input_tokens,
-            output_tokens=request.output_tokens,
+            model_id=cost_request.id,
+            input_tokens=cost_request.input_tokens,
+            output_tokens=cost_request.output_tokens,
             db=db,
             user_id=user.id,
         )
@@ -258,7 +301,8 @@ async def calculate_cost(request: ModelCostRequest, db: Session = Depends(get_db
 
 
 @app.get("/user/{user_id}/usage", response_class=MarkdownJSONResponse)
-async def get_user_usage(user_id: str, db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def get_user_usage(request: Request, user_id: str, db: Session = Depends(get_db)):
     """Get usage statistics for a user"""
     try:
         usage_stats = get_user_usage_stats(db, user_id)

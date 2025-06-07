@@ -27,3 +27,6 @@ tqdm==4.67.1
 typing_extensions==4.8.0
 urllib3==2.4.0
 uvicorn
+slowapi
+redis
+aiohttp
